@@ -6,24 +6,28 @@ class DQN(nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim):
         super(DQN, self).__init__()
         self.fc1 = nn.Linear(input_dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
-        self.fc3 = nn.Linear(hidden_dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, 2*hidden_dim)
+        self.fc3 = nn.Linear(2*hidden_dim, hidden_dim)
         self.fc4 = nn.Linear(hidden_dim, output_dim)
 
     def forward(self, x):
         #print("shape of x in forward function DQN :",x.shape)
-        x = torch.tanh(self.fc1(x))
-        x = torch.sigmoid(self.fc2(x))
-        x = torch.tanh(self.fc3(x))
+        x = torch.relu(self.fc1(x))
+        x = torch.tanh(self.fc2(x))
+        x = torch.sigmoid(self.fc3(x))
         x = self.fc4(x)
         return x
 
 
 class StockTradingEnv:
-    def __init__(self, ticker, start, end, lookback,tw):
-        self.data = yf.download(ticker, start, end)
+    def __init__(self, ticker, start, end, lookback,tw,tf):
+        self.data = yf.download(ticker, start, end,period=tf)
+        #self.data = self.data.drop(columns=['Volume']) # when not standardizing data volume corrupts the network 
+        ## standardize data per column
+        self.data = (self.data - self.data.mean()) / self.data.std()
         self.lookback = lookback
         self.tw = tw
+        self.tf = tf
         self.reset()
 
     def reset(self):
