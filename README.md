@@ -1,5 +1,8 @@
-Ce repo contient une implémentation A - Z de l'algorithme présenté dans le papier (en pdf dans le repo). 
+This repo contains an A-Z implementation of the algorithm presented in the paper (in pdf in the repo).
 
-Il a été crée dans le cadre de l'évaluation de Reinforcement Learning du Master 2 Data Science, dans le cours de M. Erwan Le Pennec.
+It was created as part of the Reinforcement Learning assessment for the Master 2 Data Science course, taught by Erwan Le Pennec.
 
-Eric PATARIN - Lucas SELINI 
+Please make sure to install the required libraries in order to run the main files. You can achieve this using "pip install -r requirements.txt".
+
+Eric PATARIN - Lucas SELINI
+

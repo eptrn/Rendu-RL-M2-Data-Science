@@ -2,16 +2,14 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
-import pandas as pd
 import random
 from collections import deque
 import matplotlib.pyplot as plt
 import yfinance as yf
-from datetime import timedelta
 from library import *
 
 NUM_EPISODES = 5
-TICKER = 'AAPL' # Ticker of the stock you want to train the algorithm on
+TICKER = 'AI.PA' # Ticker of the stock you want to train the algorithm on
 START_DATE = '2018-06-01' # Training Data Start Date
 END_DATE = '2023-03-22' # Training Data End Date
 OOS_START_DATE = '2023-03-28' # Out of Sample Data Start Date
@@ -25,10 +23,11 @@ ACTIONS_OOS = []
 
 # Hyperparameters
 n = 1  # look back period
+
 input_dim = 6 # OHLCV and Adjusted Close in yahoo finance Data
 hidden_dim = 64
-
 output_dim = len(ACTION_SET)  # buy, sell, do nothing for now
+
 epsilon = 0.80
 epsilon_decay = 0.95
 gamma = 0.975
@@ -157,12 +156,15 @@ print('\n')
 
 # Out of Sample Testing
 data_bis = yf.download(TICKER,OOS_START_DATE, OOS_END_DATE)
-data_bis = (data_bis - data_bis.mean()) / data_bis.std() # standardize data per column
+
+data_bis = (data_bis - env.data.mean()) / env.data.std() # standardize with data in sample to stay consistant
+#data_bis = (data_bis - data_bis.mean()) / data_bis.std() # uncomment standardize with data oos
+
+# epsilon greedy for action selection in OOS as an example
 epsilon_oos = 0.05
 for t in range(n,len(data_bis)-tw):
     state = data_bis.iloc[t-n:t]
     state = torch.tensor(np.array(state), dtype=torch.float32).unsqueeze(0)
-    # epsilon greedy for action selection in OOS as an example
     if random.random() < epsilon_oos:
         action = random.choice(ACTION_SET)
     else:
