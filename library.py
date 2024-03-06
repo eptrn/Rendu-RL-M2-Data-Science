@@ -21,10 +21,8 @@ class DQN(nn.Module):
 
 class StockTradingEnv:
     def __init__(self, ticker, start, end, lookback,tw,tf):
-        self.data = yf.download(ticker, start, end,period=tf)
-        #self.data = self.data.drop(columns=['Volume']) # when not standardizing data volume corrupts the network 
-        ## standardize data per column
-        self.data = (self.data - self.data.mean()) / self.data.std()
+        self.data = yf.download(ticker, start, end,interval=tf) 
+        self.data = self.data.dropna()
         self.lookback = lookback
         self.tw = tw
         self.tf = tf
@@ -35,7 +33,6 @@ class StockTradingEnv:
         return self.get_state(self.lookback)
 
     def step(self, action):
-
         price_now = self.data['Close'].iloc[self.t]
         if self.t + self.tw < len(self.data):
             price_next = self.data['Close'].iloc[self.t + self.tw]

@@ -8,14 +8,13 @@ import matplotlib.pyplot as plt
 import yfinance as yf
 from library import *
 
-NUM_EPISODES = 5
+NUM_EPISODES = 10
 TICKER = 'AI.PA' # Ticker of the stock you want to train the algorithm on
-START_DATE = '2018-06-01' # Training Data Start Date
+START_DATE = '2018-01-01' # Training Data Start Date
 END_DATE = '2023-03-22' # Training Data End Date
 OOS_START_DATE = '2023-03-28' # Out of Sample Data Start Date
-OOS_END_DATE = '2024-03-01' # Out of Sample Data End Date
+OOS_END_DATE = '2023-11-01' # Out of Sample Data End Date
 ACTION_SET = [-1,0,1] # sell, hold, buy
-
 REWARDS = []
 LOSSES = []
 MEAN_LOSSES = []
@@ -23,30 +22,31 @@ ACTIONS_OOS = []
 
 # Hyperparameters
 n = 1  # look back period
-
 input_dim = 6 # OHLCV and Adjusted Close in yahoo finance Data
-hidden_dim = 64
+hidden_dim = 50
 output_dim = len(ACTION_SET)  # buy, sell, do nothing for now
-
-epsilon = 0.80
-epsilon_decay = 0.95
-gamma = 0.975
+tw = 10  # time window of action stabilization
+tf = '1d' # time frame of the data #please note that with the free version of yahoo finance only 7 days worth of 1m granularity data can be downloaded
+epsilon = 0.99
+epsilon_decay = 0.975
+gamma = 0.775
 learning_rate = 0.05
 max_size_replay = 1000
 N = deque(maxlen=max_size_replay) # replay memory size
-batch_size = 200
-C = 120  # number of steps to restart weights of the target network
-tw = 5  # time window of action stabilization
-tf = '1d' # time frame of the data
+batch_size = 256 # Please write only integers
+C = 90  # number of steps to restart weights of the target network
 
 # Initialize environment
 env = StockTradingEnv(ticker=TICKER, start=START_DATE, end=END_DATE, lookback=n,tw=tw,tf=tf)
+#min max normalization, store the min and max, useful later for out of sample normalisation
+ohlcv_mean = env.data.mean()
+ohlcv_std = env.data.std()
+env.data = (env.data - ohlcv_mean) / ohlcv_std
 if input_dim != env.data.shape[1]:
     print('input_dim and env data shape conflict !') # OHLCV and Adjusted Close in yahoo finance Data
     input_dim = env.data.shape[1]
 T = env.data.shape[0]
-print('T:',T)
-print('env data',env.data.head(3))
+print('T = ',T)
 
 # Initialize DQN and target network
 Q = DQN(input_dim, hidden_dim, output_dim)
@@ -68,11 +68,10 @@ for episode in range(NUM_EPISODES):
         if w == 0:
             if random.random() < epsilon:
                 action = random.choice(ACTION_SET)
-                print('selecting random action:',action)
                 w = tw
             else:
                 action = torch.argmax(Q(state)).item()-1 #-1 to make our python indexing compatible with the action set
-
+    
         # Perform action and get new state and reward
         new_state, reward, done = env.step(action)
         new_state = torch.tensor(np.array(new_state), dtype=torch.float32).unsqueeze(0)
@@ -94,7 +93,7 @@ for episode in range(NUM_EPISODES):
 
         #Compute the target Q values
         targets = np.array(reward_batch) + gamma*np.squeeze(max_next_Q_values.detach().numpy()) # y_i = r_i + gamma*max_a' Q_target(s',a')
-        print('max_next_Q_values',max_next_Q_values,max_next_Q_values.shape)
+        #print('max_next_Q_values',max_next_Q_values,max_next_Q_values.shape) #uncomment to check the values are not constant 
         Q_tmp = np.squeeze(Q_values.detach().numpy())
         Q_values_batch = []
         if t == n:
@@ -107,14 +106,13 @@ for episode in range(NUM_EPISODES):
         loss = nn.functional.mse_loss(torch.tensor(Q_values_batch,dtype=torch.float32), torch.tensor(targets,dtype=torch.float32))
         loss.requires_grad = True
         LOSSES.append(loss.item())
-        # add condition to add the loss to the list only if it is at the end of the episode
         optimizer.zero_grad()
         loss.backward() # Compute the gradient and update the weights
         optimizer.step()
 
         if t % C == 0:
             Q_target.load_state_dict(Q.state_dict())  #Reset Q_target to Q every C steps
-            print('Reset target weights - C step')
+            #print('Reset target network weights - %C step')
 
         # Updates #
         epsilon = epsilon_decay * epsilon
@@ -123,14 +121,13 @@ for episode in range(NUM_EPISODES):
 
         if done:
             break
-        print('\n')
-    
+
     mean_loss = np.mean(LOSSES)
+    print(f'Episode {episode+1}/{NUM_EPISODES} - Mean Loss {mean_loss}')
     MEAN_LOSSES.append(mean_loss)
 
 print('\n')
 print('Training complete')
-print('\n')
 
 # Plot the rewards and the mean reward histogram
 plt.hist(REWARDS, bins=30)
@@ -155,12 +152,13 @@ print('Launching Out of Sample Testing  ...')
 print('\n')
 
 # Out of Sample Testing
-data_bis = yf.download(TICKER,OOS_START_DATE, OOS_END_DATE)
+data_bis = yf.download(TICKER,OOS_START_DATE, OOS_END_DATE, interval=tf)
 
-data_bis = (data_bis - env.data.mean()) / env.data.std() # standardize with data in sample to stay consistant
+# Choosing a scaling
 #data_bis = (data_bis - data_bis.mean()) / data_bis.std() # uncomment standardize with data oos
+data_bis = (data_bis - ohlcv_mean) / ohlcv_std # min max normalization with the same min and max as in sample
 
-# epsilon greedy for action selection in OOS as an example
+# epsilon greedy for action selection in OOS as an example # just to show how to use the trained model
 epsilon_oos = 0.05
 for t in range(n,len(data_bis)-tw):
     state = data_bis.iloc[t-n:t]
@@ -171,11 +169,9 @@ for t in range(n,len(data_bis)-tw):
         action = torch.argmax(Q(state)).item()-1
     ACTIONS_OOS.append(action)
 
-print('ACTIONS:',ACTIONS_OOS)
-
 # Plot the actions and the Close Price to visualize the strategy
 data_bis['Close'].plot()
-# if action == 1 I want to have a triangle pointing up else a triangle pointing down
+# if action == 1 (buy), plot a triangle pointing up else a triangle pointing down
 for i in range(len(ACTIONS_OOS)):
     if ACTIONS_OOS[i] == 1:
         plt.plot(data_bis.index[i],data_bis['Close'].iloc[i],marker='o',color='navy',label='Buy')
@@ -183,7 +179,6 @@ for i in range(len(ACTIONS_OOS)):
         plt.plot(data_bis.index[i],data_bis['Close'].iloc[i],marker='v',color='orchid',label='Sell')
     else:
         pass
-
 plt.xlabel('Time')
 plt.ylabel(f'Standardized Close Price of {TICKER}')
 plt.title('Out of Sample Actions')
